@@ -26,6 +26,8 @@
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "axios": "^1.7.8",
+    "chart.js": "^3.9.1",
+    "chartjs-node-canvas": "^4.1.6",
     "cheerio": "^1.0.0",
     "dayjs": "^1.11.13",
     "fs": "0.0.1-security",
