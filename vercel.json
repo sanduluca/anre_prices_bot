@@ -1,5 +1,7 @@
 {
     "version": 2,
+    "buildCommand": "npm run build",
+    "installCommand": "pnpm install",
     "builds": [
       {
         "src": "dist/main.js",
