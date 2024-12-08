@@ -12,11 +12,13 @@ jobs:
     strategy:
       matrix:
         node-version: [20.18.0]
-    env:
-      TOKEN: ${{ secrets.TOKEN }}
 
     steps:
     - uses: actions/checkout@v4
+    - name: Make envfile
+      uses: SpicyPizza/create-envfile@v2.0
+      with:
+        envkey_TOKEN: ${{ secrets.TOKEN }}
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
@@ -24,3 +26,7 @@ jobs:
         cache: 'pnpm'
     - run: pnpm install
     - run: npm run build --if-present
+    - run: pm2 reload anre_prices_bot
+
+
+    
