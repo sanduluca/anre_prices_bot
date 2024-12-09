@@ -1,11 +1,13 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Telegraf } from 'telegraf';
+import { Telegraf, TelegramError } from 'telegraf';
 import { message } from 'telegraf/filters';
-import * as cron from 'node-cron';
 import * as fs from 'fs';
 import * as dayjs from 'dayjs';
 import { AnreService } from 'src/anre/anre.service';
+import { Cron } from '@nestjs/schedule';
+import { FmtString } from 'telegraf/typings/format';
+import { ExtraReplyMessage } from 'telegraf/typings/telegram-types';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -33,7 +35,6 @@ export class TelegramService implements OnModuleInit {
 
   onModuleInit() {
     this.initBotCommands();
-    this.initScheduler();
     this.bot.launch();
     this.logger.log('Telegram Bot is running!');
   }
@@ -57,7 +58,7 @@ export class TelegramService implements OnModuleInit {
         case '/start':
           this.sessions.push(chatId);
           this.saveChats(this.sessionsFile, this.sessions);
-          this.bot.telegram.sendMessage(chatId, 'Welcome! Choose an action:', {
+          this.sendMessage(chatId, 'Welcome! Choose an action:', {
             reply_markup: {
               keyboard: this.getKeyboard(false),
               resize_keyboard: true,
@@ -84,24 +85,17 @@ export class TelegramService implements OnModuleInit {
         case labels.REMIND_DAILY:
           this.scheduledChats.push(chatId);
           this.saveChats(this.scheduledChatsFile, this.scheduledChats);
-          this.bot.telegram.sendMessage(
-            chatId,
-            'You will now receive daily updates!',
-            {
-              reply_markup: {
-                keyboard: this.getKeyboard(true),
-                resize_keyboard: true,
-              },
+          this.sendMessage(chatId, 'You will now receive daily updates!', {
+            reply_markup: {
+              keyboard: this.getKeyboard(true),
+              resize_keyboard: true,
             },
-          );
+          });
           break;
 
         case labels.REMOVE_REMINDER:
-          this.scheduledChats = this.scheduledChats.filter(
-            (id) => id !== chatId,
-          );
-          this.saveChats(this.scheduledChatsFile, this.scheduledChats);
-          this.bot.telegram.sendMessage(chatId, 'Daily reminders disabled.', {
+          this.removeReminderForChat(chatId);
+          this.sendMessage(chatId, 'Daily reminders disabled.', {
             reply_markup: {
               keyboard: this.getKeyboard(false),
               resize_keyboard: true,
@@ -110,7 +104,7 @@ export class TelegramService implements OnModuleInit {
           break;
 
         case labels.CONTACT_DEVELOPER:
-          this.bot.telegram.sendMessage(
+          this.sendMessage(
             chatId,
             '<b>Developer:</b> Sandu Luca\n<a href="https://www.linkedin.com/in/sandu-luca-372439184/">LinkedIn</a>\n<a href="https://github.com/sanduluca">GitHub</a>\n<a href="mailto:sandulucawork@gmail.com">Email: sandulucawork@gmail.com</a>',
             {
@@ -120,7 +114,7 @@ export class TelegramService implements OnModuleInit {
           break;
 
         default:
-          this.bot.telegram.sendMessage(
+          this.sendMessage(
             chatId,
             'Unknown command. Please use the keyboard actions.',
           );
@@ -128,13 +122,38 @@ export class TelegramService implements OnModuleInit {
     });
   }
 
-  private initScheduler() {
-    cron.schedule('0 12 * * *', () => {
-      this.logger.log('Sending scheduled updates...');
-      this.scheduledChats.forEach((chatId) => {
-        this.sendPetrolPrice(chatId);
-        this.sendDieselPrice(chatId);
-      });
+  private removeReminderForChat(chatId: number | string) {
+    this.scheduledChats = this.scheduledChats.filter((id) => id !== chatId);
+    this.saveChats(this.scheduledChatsFile, this.scheduledChats);
+  }
+
+  private sendMessage(
+    chatId: number | string,
+    text: string | FmtString,
+    extra?: ExtraReplyMessage,
+  ) {
+    return this.bot.telegram.sendMessage(chatId, text, extra).catch((e) => {
+      console.log(e.message, e instanceof TelegramError, e);
+      if (e instanceof TelegramError) {
+        if (e.message.includes('chat not found')) {
+          this.removeReminderForChat(chatId);
+        }
+        this.logger.error(
+          `Error sending message to chat ${chatId}: ${e.message}`,
+        );
+      }
+    });
+  }
+
+  @Cron('0 12 * * *', {
+    name: 'notifications',
+    timeZone: 'Europe/Chisinau',
+  })
+  sendFuelPrices() {
+    this.logger.log('Sending scheduled updates...');
+    this.scheduledChats.forEach((chatId) => {
+      this.sendPetrolPrice(chatId);
+      this.sendDieselPrice(chatId);
     });
   }
 
@@ -167,7 +186,7 @@ export class TelegramService implements OnModuleInit {
       const emoji = diff < 0 ? '📉' : '📈';
       const parsedDate = dayjs(latest.date).format('DD.MM.YYYY');
 
-      this.bot.telegram.sendMessage(
+      this.sendMessage(
         chatId,
         `${emoji} Petrol: ${parsedDate} ${latest.price} (${diff})`,
       );
@@ -181,7 +200,7 @@ export class TelegramService implements OnModuleInit {
       const table = data.data.map(
         (row) => `${dayjs(row[0]).format('DD.MM.YYYY')}\t${row[1]}`,
       );
-      this.bot.telegram.sendMessage(
+      this.sendMessage(
         chatId,
         `*Petrol Prices Table*\n\n\`\`\`\n${table.join('\n')}\n\`\`\``,
         { parse_mode: 'MarkdownV2' },
@@ -208,7 +227,7 @@ export class TelegramService implements OnModuleInit {
       const emoji = diff < 0 ? '📉' : '📈';
       const parsedDate = dayjs(latest.date).format('DD.MM.YYYY');
 
-      this.bot.telegram.sendMessage(
+      this.sendMessage(
         chatId,
         `${emoji} Diesel: ${parsedDate} ${latest.price} (${diff})`,
       );
@@ -222,7 +241,7 @@ export class TelegramService implements OnModuleInit {
       const table = data.data.map(
         (row) => `${dayjs(row[0]).format('DD.MM.YYYY')}\t${row[1]}`,
       );
-      this.bot.telegram.sendMessage(
+      this.sendMessage(
         chatId,
         `*Diesel Prices Table*\n\n\`\`\`\n${table.join('\n')}\n\`\`\``,
         { parse_mode: 'MarkdownV2' },
