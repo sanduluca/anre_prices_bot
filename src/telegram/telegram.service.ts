@@ -133,7 +133,6 @@ export class TelegramService implements OnModuleInit {
     extra?: ExtraReplyMessage,
   ) {
     return this.bot.telegram.sendMessage(chatId, text, extra).catch((e) => {
-      console.log(e.message, e instanceof TelegramError, e);
       if (e instanceof TelegramError) {
         if (e.message.includes('chat not found')) {
           this.removeReminderForChat(chatId);
