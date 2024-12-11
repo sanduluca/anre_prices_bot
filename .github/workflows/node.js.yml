@@ -2,11 +2,10 @@ name: Node.js CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ['main']
 
 jobs:
   build:
-
     runs-on: self-hosted
 
     strategy:
@@ -14,19 +13,25 @@ jobs:
         node-version: [20.18.0]
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Make envfile
-      uses: SpicyPizza/create-envfile@v2.0
-      with:
-        envkey_TOKEN: ${{ secrets.TOKEN }}
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'pnpm'
-    - run: pnpm install
-    - run: npm run build --if-present
-    - run: pm2 reload anre_prices_bot
+      - uses: actions/checkout@v4
+        with:
+          path: /var/www/anre_prices_bot
+          clean: false # Do not delete existing files in the project folder
+      - name: Make envfile
+        uses: SpicyPizza/create-envfile@v2.0
+        with:
+          envkey_TOKEN: ${{ secrets.TOKEN }}
+          directory: /var/www/anre_prices_bot/
 
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
 
-    
+      - run: |
+          pnpm install
+          npm run build --if-present
+        working-directory: /var/www/anre_prices_bot
+
+      - run: pm2 reload anre_prices_bot
