@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: false # Do not delete existing files in the project folder
+
       - name: Make envfile
         uses: SpicyPizza/create-envfile@v2.0
         with:
