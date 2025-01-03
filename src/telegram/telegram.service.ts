@@ -4,7 +4,7 @@ import { Telegraf, TelegramError } from 'telegraf';
 import { message } from 'telegraf/filters';
 import * as fs from 'fs';
 import * as dayjs from 'dayjs';
-import { AnreService } from 'src/anre/anre.service';
+import { AnreService, FuelData } from 'src/anre/anre.service';
 import { Cron } from '@nestjs/schedule';
 import { FmtString } from 'telegraf/typings/format';
 import { ExtraReplyMessage } from 'telegraf/typings/telegram-types';
@@ -148,12 +148,23 @@ export class TelegramService implements OnModuleInit {
     name: 'notifications',
     timeZone: 'Europe/Chisinau',
   })
-  sendFuelPrices() {
+  async sendFuelPrices() {
     this.logger.log('Sending scheduled updates...');
-    this.scheduledChats.forEach((chatId) => {
-      this.sendPetrolPrice(chatId);
-      this.sendDieselPrice(chatId);
-    });
+    const today = dayjs().format('YYYY-MM-DD');
+    const yesterday = dayjs().subtract(2, 'day').format('YYYY-MM-DD');
+
+    try {
+      const [petrolData, dieselData] = await Promise.all([
+        this.anreService.getPetrolPrice(yesterday, today),
+        this.anreService.getDieselPrice(yesterday, today),
+      ]);
+      this.scheduledChats.forEach((chatId) => {
+        this.sendPetrolPrice(chatId, petrolData);
+        this.sendDieselPrice(chatId, dieselData);
+      });
+    } catch (e) {
+      this.logger.error(`Error getting fuel prices: ${e.message}`);
+    }
   }
 
   private getKeyboard(isSubscribed: boolean) {
@@ -173,28 +184,29 @@ export class TelegramService implements OnModuleInit {
     ];
   }
 
-  private sendPetrolPrice(chatId: number) {
+  private async sendPetrolPrice(chatId: number, fuelData?: FuelData) {
     const today = dayjs().format('YYYY-MM-DD');
     const yesterday = dayjs().subtract(2, 'day').format('YYYY-MM-DD');
-    this.anreService
-      .getPetrolPrice(yesterday, today)
-      .then((data) => {
-        const latest = { date: today, price: data.data[0][1] };
-        const previous = { price: data.data[1][1] };
-        const diff = Number(
-          (Number(latest.price) - Number(previous.price)).toFixed(2),
-        );
-        const emoji = diff < 0 ? '📉' : '📈';
-        const parsedDate = dayjs(latest.date).format('DD.MM.YYYY');
-
-        this.sendMessage(
-          chatId,
-          `${emoji} Petrol: ${parsedDate} ${latest.price} (${diff})`,
-        );
-      })
-      .catch((e) => {
+    let data = fuelData;
+    if (!data) {
+      try {
+        data = await this.anreService.getPetrolPrice(yesterday, today);
+      } catch (e) {
         this.logger.error(`Error getting petrol price: ${e.message}`);
-      });
+        return;
+      }
+    }
+
+    const { diff, emoji, parsedDate, price } = this.getDiffInfo(
+      today,
+      data.data[0][1],
+      data.data[1][1],
+    );
+
+    this.sendMessage(
+      chatId,
+      `${emoji} Petrol: ${parsedDate} ${price} (${diff})`,
+    );
   }
 
   private sendPetrolPriceTable(chatId: number) {
@@ -227,28 +239,29 @@ export class TelegramService implements OnModuleInit {
       });
   }
 
-  private sendDieselPrice(chatId: number) {
+  private async sendDieselPrice(chatId: number, fuelData?: FuelData) {
     const today = dayjs().format('YYYY-MM-DD');
     const yesterday = dayjs().subtract(2, 'day').format('YYYY-MM-DD');
-    this.anreService
-      .getDieselPrice(yesterday, today)
-      .then((data) => {
-        const latest = { date: today, price: data.data[0][1] };
-        const previous = { price: data.data[1][1] };
-        const diff = Number(
-          (Number(latest.price) - Number(previous.price)).toFixed(2),
-        );
-        const emoji = diff < 0 ? '📉' : '📈';
-        const parsedDate = dayjs(latest.date).format('DD.MM.YYYY');
-
-        this.sendMessage(
-          chatId,
-          `${emoji} Diesel: ${parsedDate} ${latest.price} (${diff})`,
-        );
-      })
-      .catch((e) => {
+    let data = fuelData;
+    if (!data) {
+      try {
+        data = await this.anreService.getDieselPrice(yesterday, today);
+      } catch (e) {
         this.logger.error(`Error getting diesel price: ${e.message}`);
-      });
+        return;
+      }
+    }
+
+    const { diff, emoji, parsedDate, price } = this.getDiffInfo(
+      today,
+      data.data[0][1],
+      data.data[1][1],
+    );
+
+    this.sendMessage(
+      chatId,
+      `${emoji} Diesel: ${parsedDate} ${price} (${diff})`,
+    );
   }
 
   private sendDieselPriceTable(chatId: number) {
@@ -280,6 +293,20 @@ export class TelegramService implements OnModuleInit {
       .catch((e) => {
         this.logger.error(`Error getting diesel price: ${e.message}`);
       });
+  }
+
+  private getDiffInfo(
+    date: string,
+    latestPrice: number,
+    previousPrice: number,
+  ) {
+    const diff = Number(
+      (Number(latestPrice) - Number(previousPrice)).toFixed(2),
+    );
+    const emoji = diff < 0 ? '📉' : '📈';
+    const parsedDate = dayjs(date).format('DD.MM.YYYY');
+
+    return { emoji, parsedDate, price: latestPrice, diff };
   }
 
   private loadChats(filePath: string): number[] {
