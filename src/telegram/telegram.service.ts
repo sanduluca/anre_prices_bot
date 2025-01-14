@@ -191,6 +191,9 @@ export class TelegramService implements OnModuleInit {
     if (!data) {
       try {
         data = await this.anreService.getPetrolPrice(yesterday, today);
+        if (!data.data[0]) {
+          throw new Error('No data available');
+        }
       } catch (e) {
         this.logger.error(`Error getting petrol price: ${e.message}`);
         return;
@@ -200,7 +203,7 @@ export class TelegramService implements OnModuleInit {
     const { diff, emoji, parsedDate, price } = this.getDiffInfo(
       today,
       data.data[0][1],
-      data.data[1][1],
+      data.data[1]?.[1] || data.data[0][1],
     );
 
     this.sendMessage(
@@ -246,6 +249,9 @@ export class TelegramService implements OnModuleInit {
     if (!data) {
       try {
         data = await this.anreService.getDieselPrice(yesterday, today);
+        if (!data.data[0]) {
+          throw new Error('No data available');
+        }
       } catch (e) {
         this.logger.error(`Error getting diesel price: ${e.message}`);
         return;
@@ -255,7 +261,7 @@ export class TelegramService implements OnModuleInit {
     const { diff, emoji, parsedDate, price } = this.getDiffInfo(
       today,
       data.data[0][1],
-      data.data[1][1],
+      data.data[1]?.[1] || data.data[0][1],
     );
 
     this.sendMessage(
